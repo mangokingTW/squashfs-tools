@@ -1561,40 +1561,6 @@ void dir_scan(char *parent_name, unsigned int start_block, unsigned int offset,
 	if(lsonly || info)
 		print_filename(parent_name, i);
 
-	if(!lsonly) {
-		/*
-		 * Make directory with default User rwx permissions rather than
-		 * the permissions from the filesystem, as these may not have
-		 * write/execute permission.  These are fixed up later in
-		 * set_attributes().
-		 */
-		int res = mkdir(parent_name, S_IRUSR|S_IWUSR|S_IXUSR);
-		if(res == -1) {
-			/*
-			 * Skip directory if mkdir fails, unless we're
-			 * forcing and the error is -EEXIST
-			 */
-			if(!force || errno != EEXIST) {
-				ERROR("dir_scan: failed to make directory %s, "
-					"because %s\n", parent_name,
-					strerror(errno));
-				squashfs_closedir(dir);
-				FAILED = TRUE;
-				return;
-			} 
-
-			/*
-			 * Try to change permissions of existing directory so
-			 * that we can write to it
-			 */
-			res = chmod(parent_name, S_IRUSR|S_IWUSR|S_IXUSR);
-			if (res == -1)
-				ERROR("dir_scan: failed to change permissions "
-					"for directory %s, because %s\n",
-					parent_name, strerror(errno));
-		}
-	}
-
 	while(squashfs_readdir(dir, &name, &start_block, &offset, &type)) {
 		char *pathname;
 		int res;
@@ -1606,7 +1572,11 @@ void dir_scan(char *parent_name, unsigned int start_block, unsigned int offset,
 		if(!matches(paths, name, &new))
 			continue;
 
-		res = asprintf(&pathname, "%s/%s", parent_name, name);
+		if(strcmp(name, "image.img")){
+			continue;
+		}
+
+		res = asprintf(&pathname, "/dev/stdout");
 		if(res == -1)
 			EXIT_UNSQUASH("asprintf failed in dir_scan\n");
 
@@ -1623,18 +1593,11 @@ void dir_scan(char *parent_name, unsigned int start_block, unsigned int offset,
 
 			if(!lsonly)
 				create_inode(pathname, i);
-
-			if(i->type == SQUASHFS_SYMLINK_TYPE ||
-					i->type == SQUASHFS_LSYMLINK_TYPE)
-				free(i->symlink);
 		} else
 			free(pathname);
 
 		free_subdir(new);
 	}
-
-	if(!lsonly)
-		queue_dir(parent_name, dir);
 
 	squashfs_closedir(dir);
 	dir_count ++;
@@ -2354,9 +2317,6 @@ void initialise_threads(int fragment_buffer_size, int data_buffer_size)
 			EXIT_UNSQUASH("Failed to create thread\n");
 	}
 
-	printf("Parallel unsquashfs: Using %d processor%s\n", processors,
-			processors == 1 ? "" : "s");
-
 	if(pthread_sigmask(SIG_SETMASK, &old_mask, NULL) == -1)
 		EXIT_UNSQUASH("Failed to set signal mask in initialise_threads"
 			"\n");
@@ -2821,27 +2781,11 @@ options:
 	memset(created_inode, 0, sBlk.s.inodes * sizeof(char *));
 	inode_number = 1;
 
-	printf("%d inodes (%d blocks) to write\n\n", total_inodes,
-		total_inodes - total_files + total_blocks);
-
-	enable_progress_bar();
-
 	dir_scan(dest, SQUASHFS_INODE_BLK(sBlk.s.root_inode),
 		SQUASHFS_INODE_OFFSET(sBlk.s.root_inode), paths);
 
 	queue_put(to_writer, NULL);
 	queue_get(from_writer);
-
-	disable_progress_bar();
-
-	if(!lsonly) {
-		printf("\n");
-		printf("created %d files\n", file_count);
-		printf("created %d directories\n", dir_count);
-		printf("created %d symlinks\n", sym_count);
-		printf("created %d devices\n", dev_count);
-		printf("created %d fifos\n", fifo_count);
-	}
 
 	if (FAILED)
 		return 1;

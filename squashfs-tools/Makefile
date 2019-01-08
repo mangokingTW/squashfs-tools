@@ -51,7 +51,7 @@ GZIP_SUPPORT = 1
 # install and uncomment
 # the LZ4_SUPPORT line below.
 #
-#LZ4_SUPPORT = 1
+LZ4_SUPPORT = 1
 
 
 ########### Building LZMA support #############
